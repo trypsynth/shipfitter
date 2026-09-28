@@ -6,7 +6,7 @@ Build and packaging helpers for Rust desktop apps, so each app's build script an
 
 - `build`, for build scripts: the commit being built as environment variables, readmes converted with pandoc, `@NAME@` templates such as an Inno Setup script filled in with the version and architecture, and the target directory.
 - `macos`: an app's `Info.plist`, and on a Mac, the `.app` bundle, Developer ID signing, and a drag-to-install disk image.
-- `package`, with the `package` feature, for an xtask: release builds, zip and tar.gz archives, and compiling an Inno Setup installer.
+- `package`, with the `package` feature, for an xtask: release builds, a workspace crate's version, zip and tar.gz archives, AppImages, and compiling an Inno Setup installer.
 - `windows`, with the `windows-resources` feature, for build scripts: the application manifest and the version resource Explorer shows.
 
 `build` and `macos` need nothing beyond the standard library.
