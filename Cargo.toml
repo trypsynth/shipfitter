@@ -1,0 +1,33 @@
+[package]
+name = "shipfitter"
+version = "0.1.0"
+description = "Build and packaging helpers for Rust desktop apps: docs, installers, app bundles and archives"
+readme = "README.md"
+repository = "https://github.com/trypsynth/shipfitter"
+keywords = ["build", "packaging", "installer", "dmg", "release"]
+categories = ["development-tools::build-utils"]
+license = "MIT"
+edition = "2024"
+
+[features]
+default = []
+# Zip and tar.gz archives, running Inno Setup, and building release binaries, for an xtask.
+package = ["dep:flate2", "dep:tar", "dep:walkdir", "dep:zip"]
+# The Windows application manifest and version resource, for a build script.
+windows-resources = ["dep:embed-manifest", "dep:winres"]
+
+[dependencies]
+embed-manifest = { version = "1.5.1", optional = true }
+flate2 = { version = "1.1.10", optional = true }
+tar = { version = "0.4.46", optional = true }
+walkdir = { version = "2.5.0", optional = true }
+winres = { version = "0.1.12", optional = true }
+zip = { version = "8.6.0", default-features = false, features = ["deflate"], optional = true }
+
+[lints.clippy]
+all = { level = "warn", priority = -1 }
+cargo = { level = "warn", priority = -1 }
+nursery = { level = "warn", priority = -1 }
+pedantic = { level = "warn", priority = -1 }
+# Everything here fails the same way: an I/O error, or the tool it runs failing.
+missing_errors_doc = "allow"
