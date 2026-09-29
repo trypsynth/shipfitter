@@ -4,7 +4,7 @@ use std::{
 	env,
 	fs::{self, File},
 	io::{self, Write},
-	path::{Path, PathBuf},
+	path::Path,
 	process::Command,
 };
 
@@ -140,9 +140,9 @@ pub struct AppImage<'a> {
 }
 
 impl AppImage<'_> {
-	/// Builds `output` with `appimagetool`, from an `AppDir` beside it. Returns whether it did:
-	/// when `appimagetool` is missing or fails, it prints a warning instead, since the `AppImage`
-	/// comes on top of the portable archive. Set `APPIMAGETOOL` to use one outside `PATH`.
+	/// Builds `output` with [`appimagetool`](crate::tools::appimagetool), from an `AppDir` beside
+	/// it. Returns whether it did: when `appimagetool` can't be found or downloaded, or fails, it
+	/// prints a warning instead, since the `AppImage` comes on top of the portable archive.
 	pub fn build(&self, output: &Path) -> Result<bool> {
 		let app_dir = output.with_extension("AppDir");
 		let _ = fs::remove_dir_all(&app_dir);
@@ -170,7 +170,13 @@ exec "${{HERE}}/usr/bin/{}" "$@"
 		fs::write(&app_run_path, self.app_run.map(str::to_string).or(default_run).ok_or("no binaries")?)?;
 		#[cfg(unix)]
 		make_executable(&app_run_path)?;
-		let tool = env::var("APPIMAGETOOL").map_or_else(|_| PathBuf::from("appimagetool"), PathBuf::from);
+		let tool = match crate::tools::appimagetool() {
+			Ok(tool) => tool,
+			Err(err) => {
+				println!("Warning: couldn't get appimagetool ({err}), skipping the AppImage.");
+				return Ok(false);
+			}
+		};
 		// Extracting and running avoids needing FUSE, which CI runners don't have.
 		match Command::new(&tool).arg("--appimage-extract-and-run").arg(&app_dir).arg(output).status() {
 			Ok(status) if status.success() => Ok(true),
@@ -179,7 +185,7 @@ exec "${{HERE}}/usr/bin/{}" "$@"
 				Ok(false)
 			}
 			Err(err) => {
-				println!("Warning: couldn't run appimagetool ({err}), skipping the AppImage. Is it in your PATH?");
+				println!("Warning: couldn't run appimagetool ({err}), skipping the AppImage.");
 				Ok(false)
 			}
 		}
@@ -192,19 +198,27 @@ fn make_executable(path: &Path) -> io::Result<()> {
 	fs::set_permissions(path, fs::Permissions::from_mode(0o755))
 }
 
-/// Compiles the Inno Setup script at `iss`, returning whether it made an installer. A missing
-/// script or compiler only prints a warning, since the installer comes on top of the portable
-/// archive.
+/// Compiles the Inno Setup script at `iss` with [`iscc`](crate::tools::iscc).
+///
+/// Returns whether it made an installer. A missing script, or a compiler that can't be found or
+/// downloaded, only prints a warning, since the installer comes on top of the portable archive.
 pub fn inno_setup(iss: &Path) -> Result<bool> {
 	if !iss.exists() {
 		println!("Skipping the installer: {} not found.", iss.display());
 		return Ok(false);
 	}
-	match Command::new("ISCC.exe").arg("/Q").arg(iss).status() {
+	let iscc = match crate::tools::iscc() {
+		Ok(iscc) => iscc,
+		Err(err) => {
+			println!("Skipping the installer: couldn't get Inno Setup ({err}).");
+			return Ok(false);
+		}
+	};
+	match Command::new(&iscc).arg("/Q").arg(iss).status() {
 		Ok(status) if status.success() => Ok(true),
 		Ok(status) => Err(format!("Inno Setup failed with {status}").into()),
 		Err(err) => {
-			println!("Skipping the installer: couldn't run ISCC.exe ({err}). Is Inno Setup in your PATH?");
+			println!("Skipping the installer: couldn't run {} ({err}).", iscc.display());
 			Ok(false)
 		}
 	}

@@ -67,30 +67,6 @@ pub fn embed_commit_info(prefix: &str) -> CommitInfo {
 	info
 }
 
-#[must_use]
-pub fn pandoc_available() -> bool {
-	Command::new("pandoc").arg("--version").output().is_ok_and(|o| o.status.success())
-}
-
-/// Converts `input` with pandoc using the options in the `defaults` file.
-///
-/// Reruns the build script when either changes. `lang` sets the document language, as a BCP 47
-/// tag such as `pt-BR`, so screen readers read the result in the right voice.
-pub fn pandoc(input: &Path, defaults: &Path, output: &Path, lang: Option<&str>) -> Result<()> {
-	println!("cargo:rerun-if-changed={}", input.display());
-	println!("cargo:rerun-if-changed={}", defaults.display());
-	let mut command = Command::new("pandoc");
-	command.arg(format!("--defaults={}", defaults.display()));
-	if let Some(lang) = lang {
-		command.args(["-M", &format!("lang={lang}")]);
-	}
-	let status = command.arg(input).arg("-o").arg(output).status()?;
-	if !status.success() {
-		return Err(format!("pandoc failed to convert {}", input.display()).into());
-	}
-	Ok(())
-}
-
 /// Copies `template` to `output`, replacing each `@NAME@` with its value.
 ///
 /// This works like `configure_file` in `CMake`, and reruns the build script when the template

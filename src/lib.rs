@@ -1,13 +1,18 @@
 //! Build and packaging helpers shared by Rust desktop apps.
 //!
 //! [`build`] and [`macos`] are always available and need nothing beyond the standard library, so
-//! a build script can use them. The `package` feature adds archives and installers for an xtask,
-//! and `windows-resources` adds the Windows manifest and version resource for a build script.
+//! a build script can use them. The `docs` feature adds Markdown documentation as HTML pages, the
+//! `package` feature adds archives and installers for an xtask, and `windows-resources` adds the
+//! Windows manifest and version resource for a build script.
 
 pub mod build;
+#[cfg(feature = "docs")]
+pub mod docs;
 pub mod macos;
 #[cfg(feature = "package")]
 pub mod package;
+#[cfg(feature = "package")]
+pub mod tools;
 #[cfg(feature = "windows-resources")]
 pub mod windows;
 

@@ -1,15 +1,17 @@
 # shipfitter
 
-Build and packaging helpers for Rust desktop apps, so each app's build script and xtask don't carry their own copies. It's used by [Fedra](https://github.com/trypsynth/fedra) and [Paperback](https://github.com/trypsynth/paperback).
+Build and packaging helpers for Rust desktop apps. [Fedra](https://github.com/trypsynth/fedra) and [Paperback](https://github.com/trypsynth/paperback) use it.
 
-## What's in it
+## Modules
 
-- `build`, for build scripts: the commit being built as environment variables, readmes converted with pandoc, `@NAME@` templates such as an Inno Setup script filled in with the version and architecture, and the target directory.
-- `macos`: an app's `Info.plist`, and on a Mac, the `.app` bundle, Developer ID signing, and a drag-to-install disk image.
-- `package`, with the `package` feature, for an xtask: release builds, a workspace crate's version, zip and tar.gz archives, AppImages, and compiling an Inno Setup installer.
-- `windows`, with the `windows-resources` feature, for build scripts: the application manifest and the version resource Explorer shows.
+- `build`: helpers for build scripts. Embeds the current commit as environment variables, fills in `@NAME@` templates such as an Inno Setup script, and finds the target directory.
+- `docs`: converts Markdown readmes to standalone HTML pages with a table of contents, and finds each translated `readme-<lang>.md` in a folder. Requires the `docs` feature.
+- `macos`: writes an app's `Info.plist`. On macOS, it also builds the `.app` bundle, signs it with a Developer ID, and creates a disk image.
+- `package`: helpers for an xtask. Runs release builds, reads a workspace crate's version, writes zip and tar.gz archives, and builds AppImages and Inno Setup installers. Requires the `package` feature.
+- `tools`: finds Inno Setup and appimagetool on `PATH`. If a tool isn't installed, downloads a pinned release to a per-user cache and verifies its SHA-256 checksum. Requires the `package` feature.
+- `windows`: embeds the application manifest and the version resource that File Explorer shows. Requires the `windows-resources` feature.
 
-`build` and `macos` need nothing beyond the standard library.
+The `build` and `macos` modules depend only on the standard library.
 
 ## Usage
 
@@ -26,9 +28,21 @@ fn main() {
 }
 ```
 
-The app can then read `env!("MYAPP_COMMIT_HASH")`, and the installer script can use `@PROJECT_VERSION@`, `@ARCH_SUFFIX@` and `@ARCH_ISS@`.
+The app can then read `env!("MYAPP_COMMIT_HASH")`, and the installer script can use `@PROJECT_VERSION@`, `@ARCH_SUFFIX@`, and `@ARCH_ISS@`.
 
-In an xtask, with the `package` feature:
+To convert `doc/readme.md` and its translations to HTML next to the executable, enable the `docs` feature:
+
+```rust
+use shipfitter::docs::{Page, bcp47, convert, readmes};
+
+println!("cargo:rerun-if-changed=doc");
+for readme in readmes("doc".as_ref()).unwrap() {
+	let lang = bcp47(&readme.code);
+	convert(&readme.path, &target_dir.join(readme.html_name()), &Page { lang: &lang, ..Page::default() }).unwrap();
+}
+```
+
+In an xtask, enable the `package` feature:
 
 ```rust
 use shipfitter::{host_arch_suffix, package::{Zip, cargo_build_release, inno_setup}};
