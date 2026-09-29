@@ -11,6 +11,7 @@ pub mod docs;
 pub mod macos;
 #[cfg(feature = "package")]
 pub mod package;
+pub mod sign;
 #[cfg(feature = "package")]
 pub mod tools;
 #[cfg(feature = "windows-resources")]

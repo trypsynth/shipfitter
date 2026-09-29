@@ -6,8 +6,9 @@ Build and packaging helpers for Rust desktop apps. [Fedra](https://github.com/tr
 
 - `build`: helpers for build scripts. Embeds the current commit as environment variables, fills in `@NAME@` templates such as an Inno Setup script, and finds the target directory.
 - `docs`: converts Markdown readmes to standalone HTML pages with a table of contents, and finds each translated `readme-<lang>.md` in a folder. Requires the `docs` feature.
-- `macos`: writes an app's `Info.plist`. On macOS, it also builds the `.app` bundle, signs it with a Developer ID, and creates a disk image.
+- `macos`: writes an app's `Info.plist`. On macOS, it also builds the `.app` bundle, imports a signing certificate into a temporary keychain, signs the bundle with a Developer ID, creates a disk image, and notarizes it.
 - `package`: helpers for an xtask. Runs release builds, reads a workspace crate's version, writes zip and tar.gz archives, and builds AppImages and Inno Setup installers. Requires the `package` feature.
+- `sign`: the `CodeSigner` trait that platform code signers implement. With the `package` feature, also writes minisign signatures for updaters to verify.
 - `tools`: finds Inno Setup and appimagetool on `PATH`. If a tool isn't installed, downloads a pinned release to a per-user cache and verifies its SHA-256 checksum. Requires the `package` feature.
 - `windows`: embeds the application manifest and the version resource that File Explorer shows. Requires the `windows-resources` feature.
 
@@ -53,6 +54,17 @@ zip.file(&target_dir.join("myapp.exe"), "myapp.exe")?.dir(&root.join("sounds"), 
 zip.finish()?;
 inno_setup(&target_dir.join("myapp.iss"))?;
 ```
+
+## Signing in CI
+
+Each signer reads its secrets from environment variables. If none of a signer's variables are set, the signer is skipped, so local builds work without secrets. If only some are set, the build fails.
+
+| Signer | Variables |
+| --- | --- |
+| `sign::Minisign` | `MINISIGN_KEY`, and `MINISIGN_PASSWORD` if the key has one |
+| `macos::Keychain` | `MACOS_CERTIFICATE_P12_BASE64`, `MACOS_CERTIFICATE_PASSWORD` |
+| `macos::DeveloperId` | `MACOS_SIGN_IDENTITY`, for a certificate that's already in a keychain |
+| `macos::Notary` | `APPSTORE_API_KEY_BASE64`, `APPSTORE_API_KEY_ID`, `APPSTORE_API_ISSUER_ID` |
 
 ## License
 

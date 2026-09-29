@@ -1,6 +1,6 @@
 [package]
 name = "shipfitter"
-version = "0.2.0"
+version = "0.2.1"
 description = "Build and packaging helpers for Rust desktop apps: docs, installers, app bundles and archives"
 readme = "README.md"
 repository = "https://github.com/trypsynth/shipfitter"
@@ -15,7 +15,7 @@ default = []
 docs = ["dep:comrak"]
 # Release builds, zip and tar.gz archives, AppImages and Inno Setup installers, for an xtask.
 # Downloads the tools they need that aren't installed.
-package = ["dep:flate2", "dep:serde_json", "dep:sha2", "dep:tar", "dep:ureq", "dep:walkdir", "dep:zip"]
+package = ["dep:flate2", "dep:minisign", "dep:serde_json", "dep:sha2", "dep:tar", "dep:ureq", "dep:walkdir", "dep:zip"]
 # The Windows application manifest and version resource, for a build script.
 windows-resources = ["dep:embed-manifest", "dep:winres"]
 
@@ -23,6 +23,7 @@ windows-resources = ["dep:embed-manifest", "dep:winres"]
 comrak = { version = "0.55.0", default-features = false, optional = true }
 embed-manifest = { version = "1.5.1", optional = true }
 flate2 = { version = "1.1.10", optional = true }
+minisign = { version = "0.10.0", optional = true }
 serde_json = { version = "1.0.151", optional = true }
 sha2 = { version = "0.11.0", optional = true }
 tar = { version = "0.4.46", optional = true }
@@ -30,6 +31,9 @@ ureq = { version = "3.4.2", optional = true }
 walkdir = { version = "2.5.0", optional = true }
 winres = { version = "0.1.12", optional = true }
 zip = { version = "8.6.0", default-features = false, features = ["deflate"], optional = true }
+
+[dev-dependencies]
+minisign-verify = "0.2.5"
 
 [lints.clippy]
 all = { level = "warn", priority = -1 }
