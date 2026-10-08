@@ -7,18 +7,14 @@
 //! in the Markdown are dropped, and any other raw HTML is kept.
 
 use std::{
-	collections::VecDeque,
+	collections::{HashSet, VecDeque},
 	fmt::Write as _,
 	fs,
 	path::{Path, PathBuf},
 };
 
-use comrak::{
-	Anchorizer, Arena, Options, create_formatter,
-	html::ChildRendering,
-	nodes::{AstNode, NodeValue},
-	parse_document,
-};
+use finl_unicode::categories::CharacterCategories;
+use pulldown_cmark::{CowStr, Event, HeadingLevel, Options, Parser, Tag, TagEnd, html};
 
 use crate::Result;
 
@@ -104,23 +100,23 @@ pub fn convert(input: &Path, output: &Path, page: &Page) -> Result<()> {
 /// Converts `markdown` into a standalone HTML page.
 #[must_use]
 pub fn markdown_to_html(markdown: &str, page: &Page) -> String {
-	let mut options = Options::default();
-	options.extension.strikethrough = true;
-	options.extension.table = true;
-	options.extension.tasklist = true;
-	options.extension.footnotes = true;
-	options.parse.smart = true;
-	// The documents are the app's own, and may use HTML Markdown can't express.
-	options.render.r#unsafe = true;
-	let arena = Arena::new();
-	let root = parse_document(&arena, markdown, &options);
-	remove_comments(root);
-	let headings = headings(root);
+	let options = Options::ENABLE_STRIKETHROUGH
+		| Options::ENABLE_TABLES
+		| Options::ENABLE_TASKLISTS
+		| Options::ENABLE_FOOTNOTES
+		| Options::ENABLE_SMART_PUNCTUATION;
+	let mut events = without_comments(Parser::new_ext(markdown, options).collect());
+	let headings = name_headings(&mut events);
 	let title = headings.iter().find(|h| h.level == 1).map_or(page.title, |h| h.text.as_str());
 	let toc = table_of_contents(&headings, page.toc_depth);
+	// The table of contents follows the first level 1 heading, or leads the document when there isn't one.
+	let toc_at = events
+		.iter()
+		.position(|event| matches!(event, Event::End(TagEnd::Heading(HeadingLevel::H1))))
+		.map_or(0, |i| i + 1);
+	events.insert(toc_at, Event::Html(CowStr::from(toc)));
 	let mut body = String::new();
-	// Writing to a String can't fail.
-	let unplaced_toc = Formatter::format_document(root, &options, &mut body, toc).unwrap_or_default();
+	html::push_html(&mut body, events.into_iter());
 	let mut html = String::new();
 	let _ = write!(html, "<!DOCTYPE html>\n<html lang=\"{}\">\n<head>\n<meta charset=\"utf-8\">\n", escape(page.lang));
 	html.push_str("<meta name=\"viewport\" content=\"width=device-width, initial-scale=1\">\n");
@@ -132,45 +128,36 @@ pub fn markdown_to_html(markdown: &str, page: &Page) -> String {
 	html.push_str("</head>\n<body>\n");
 	html.push_str(page.before_body);
 	html.push_str("<main>\n");
-	// Without a level 1 heading to follow, the table of contents leads the document.
-	html.push_str(&unplaced_toc);
 	html.push_str(&body);
 	html.push_str("</main>\n</body>\n</html>\n");
 	html
 }
 
-create_formatter!(Formatter<String>, {
-	NodeValue::Heading(ref heading) => |context, node, entering| {
-		if entering {
-			context.cr()?;
-			let id = context.anchorizer.anchorize(&node.collect_text());
-			write!(context, "<h{} id=\"{id}\">", heading.level)?;
-		} else {
-			write!(context, "</h{}>", heading.level)?;
-			context.lf()?;
-			if heading.level == 1 && !context.user.is_empty() {
-				let toc = std::mem::take(&mut context.user);
-				context.write_str(&toc)?;
+/// Drops HTML comments, which are notes for whoever edits the Markdown, like the source hash a machine translation records. Raw HTML of any other kind is kept, since the documents are the app's own and may use HTML Markdown can't express.
+fn without_comments(events: Vec<Event<'_>>) -> Vec<Event<'_>> {
+	let mut kept = Vec::with_capacity(events.len());
+	let mut block: Option<Vec<Event<'_>>> = None;
+	for event in events {
+		match (event, &mut block) {
+			(Event::Start(Tag::HtmlBlock), None) => block = Some(vec![Event::Start(Tag::HtmlBlock)]),
+			(Event::End(TagEnd::HtmlBlock), Some(_)) => {
+				let mut events = block.take().unwrap_or_default();
+				// A block's HTML arrives a line at a time, so a comment over several lines is only recognisable whole.
+				let html: String = events
+					.iter()
+					.filter_map(|event| if let Event::Html(html) = event { Some(html.as_ref()) } else { None })
+					.collect();
+				if !is_comment(&html) {
+					events.push(Event::End(TagEnd::HtmlBlock));
+					kept.extend(events);
+				}
 			}
+			(event, Some(events)) => events.push(event),
+			(Event::InlineHtml(html), None) if is_comment(&html) => {}
+			(event, None) => kept.push(event),
 		}
-		return Ok(ChildRendering::HTML);
-	},
-});
-
-/// Drops HTML comments, which are notes for whoever edits the Markdown, like the source hash a
-/// machine translation records.
-fn remove_comments<'a>(root: &'a AstNode<'a>) {
-	let comments: Vec<_> = root
-		.descendants()
-		.filter(|node| match &node.data().value {
-			NodeValue::HtmlBlock(block) => is_comment(&block.literal),
-			NodeValue::HtmlInline(html) => is_comment(html),
-			_ => false,
-		})
-		.collect();
-	for node in comments {
-		node.detach();
 	}
+	kept
 }
 
 fn is_comment(html: &str) -> bool {
@@ -184,19 +171,48 @@ struct Heading {
 	id: String,
 }
 
-/// Every heading in document order, with the `id` the formatter will give it: the same
-/// [`Anchorizer`] over the same headings in the same order comes up with the same ones.
-fn headings<'a>(root: &'a AstNode<'a>) -> Vec<Heading> {
-	let mut anchorizer = Anchorizer::new();
-	root.descendants()
-		.filter_map(|node| match node.data().value {
-			NodeValue::Heading(heading) => {
-				let text = node.collect_text();
-				Some(Heading { level: heading.level, id: anchorizer.anchorize(&text), text })
+/// Gives every heading its `id` and returns them all in document order.
+fn name_headings(events: &mut [Event<'_>]) -> Vec<Heading> {
+	let mut taken = HashSet::new();
+	let mut headings = Vec::new();
+	for start in 0..events.len() {
+		let Event::Start(Tag::Heading { level, .. }) = events[start] else { continue };
+		let mut text = String::new();
+		for event in &events[start + 1..] {
+			match event {
+				Event::End(TagEnd::Heading(_)) => break,
+				Event::Text(literal) | Event::Code(literal) => text.push_str(literal),
+				Event::SoftBreak | Event::HardBreak => text.push(' '),
+				_ => {}
 			}
-			_ => None,
+		}
+		let id = anchor(&text, &mut taken);
+		if let Event::Start(Tag::Heading { id: slot, .. }) = &mut events[start] {
+			*slot = Some(CowStr::from(id.clone()));
+		}
+		headings.push(Heading { level: level as u8, text, id });
+	}
+	headings
+}
+
+/// The `id` GitHub gives a heading, so a `[link](#some-heading)` written for GitHub works in the page too: lowercase, punctuation and symbols dropped, spaces turned into hyphens, and `-1`, `-2` and so on added to repeats.
+fn anchor(text: &str, taken: &mut HashSet<String>) -> String {
+	let base: String = text
+		.to_lowercase()
+		.chars()
+		.filter(|&c| {
+			c == ' ' || c == '-' || c.is_letter() || c.is_mark() || c.is_number() || c.is_punctuation_connector()
 		})
-		.collect()
+		.map(|c| if c == ' ' { '-' } else { c })
+		.collect();
+	let mut id = base.clone();
+	let mut repeat = 0;
+	while taken.contains(&id) {
+		repeat += 1;
+		id = format!("{base}-{repeat}");
+	}
+	taken.insert(id.clone());
+	id
 }
 
 /// The headings from level 2 down `depth` levels, as nested lists of links.
@@ -234,10 +250,7 @@ fn table_of_contents(headings: &[Heading], depth: u8) -> String {
 }
 
 fn escape(text: &str) -> String {
-	let mut escaped = String::with_capacity(text.len());
-	// Writing to a String can't fail.
-	let _ = comrak::html::escape(&mut escaped, text);
-	escaped
+	text.replace('&', "&amp;").replace('<', "&lt;").replace('>', "&gt;").replace('"', "&quot;")
 }
 
 const STYLE: &str = r"<style>
@@ -316,6 +329,13 @@ mod tests {
 		let html = body("<!-- source-hash: abc -->\n\n# T\n\nText <!-- note --> <kbd>Ctrl</kbd>.\n");
 		assert!(!html.contains("<!--"));
 		assert!(html.contains("<kbd>Ctrl</kbd>"));
+	}
+
+	#[test]
+	fn a_comment_over_several_lines_is_dropped_whole() {
+		let html = body("# T\n\n<!--\nsource-hash: abc\n-->\n\nText.\n");
+		assert!(!html.contains("source-hash"));
+		assert!(html.contains("<p>Text.</p>"));
 	}
 
 	#[test]
