@@ -1,6 +1,6 @@
 [package]
 name = "shipfitter"
-version = "0.2.1"
+version = "0.2.2"
 description = "Build and packaging helpers for Rust desktop apps: docs, installers, app bundles and archives"
 readme = "README.md"
 repository = "https://github.com/trypsynth/shipfitter"
