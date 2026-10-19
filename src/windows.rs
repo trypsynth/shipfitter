@@ -6,7 +6,7 @@ use std::env;
 use embed_manifest::{
 	manifest::{
 		ActiveCodePage, DpiAwareness, HeapType, Setting,
-		SupportedOS::{Windows7, Windows10},
+		SupportedOS::Windows10,
 	},
 	new_manifest,
 };
@@ -19,13 +19,15 @@ fn targets_windows() -> bool {
 }
 
 /// Embeds a manifest asking for version 6 of the common controls, UTF-8 as the code page, the
-/// segment heap, per-monitor DPI awareness and long paths.
+/// segment heap, per-monitor DPI awareness and long paths, on Windows 10 and later.
+///
+/// Rust's own Windows targets need Windows 10, so nothing older could run the executable anyway.
 pub fn embed_manifest(app_name: &str) -> Result<()> {
 	if !targets_windows() {
 		return Ok(());
 	}
 	let manifest = new_manifest(app_name)
-		.supported_os(Windows7..=Windows10)
+		.supported_os(Windows10..)
 		.active_code_page(ActiveCodePage::Utf8)
 		.heap_type(HeapType::SegmentHeap)
 		.dpi_awareness(DpiAwareness::PerMonitorV2)
