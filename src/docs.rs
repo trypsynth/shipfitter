@@ -10,10 +10,12 @@ use std::{
 	collections::{HashSet, VecDeque},
 	fmt::Write as _,
 	fs,
+	io::Write as _,
 	path::{Path, PathBuf},
 };
 
 use finl_unicode::categories::CharacterCategories;
+use flate2::{Compression, write::DeflateEncoder};
 use pulldown_cmark::{CowStr, Event, HeadingLevel, Options, Parser, Tag, TagEnd, html};
 
 use crate::Result;
@@ -91,10 +93,27 @@ pub fn bcp47(code: &str) -> String {
 /// A build script should print `cargo:rerun-if-changed` for the folder the Markdown is in, so
 /// adding a translation reruns it too.
 pub fn convert(input: &Path, output: &Path, page: &Page) -> Result<()> {
-	let markdown = fs::read_to_string(input).map_err(|e| format!("couldn't read {}: {e}", input.display()))?;
-	fs::write(output, markdown_to_html(&markdown, page))
-		.map_err(|e| format!("couldn't write {}: {e}", output.display()))?;
+	let html = markdown_to_html(&read_markdown(input)?, page);
+	fs::write(output, html).map_err(|e| format!("couldn't write {}: {e}", output.display()))?;
 	Ok(())
+}
+
+/// Like [`convert`], but writes the page as raw DEFLATE (no zlib or gzip header), for a build
+/// script that embeds the pages in the binary.
+///
+/// A page is mostly markup and deflates to about a quarter of its size. The app inflates it
+/// before showing it, with `flate2::read::DeflateDecoder` or
+/// `miniz_oxide::inflate::decompress_to_vec`.
+pub fn convert_deflated(input: &Path, output: &Path, page: &Page) -> Result<()> {
+	let html = markdown_to_html(&read_markdown(input)?, page);
+	let mut encoder = DeflateEncoder::new(Vec::new(), Compression::best());
+	encoder.write_all(html.as_bytes())?;
+	fs::write(output, encoder.finish()?).map_err(|e| format!("couldn't write {}: {e}", output.display()))?;
+	Ok(())
+}
+
+fn read_markdown(input: &Path) -> Result<String> {
+	Ok(fs::read_to_string(input).map_err(|e| format!("couldn't read {}: {e}", input.display()))?)
 }
 
 /// Converts `markdown` into a standalone HTML page.
@@ -343,6 +362,23 @@ mod tests {
 		let html = markdown_to_html("# A <b>&</b> B\n\n## `x < y`\n", &Page::default());
 		assert!(html.contains("<title>A &amp; B</title>"));
 		assert!(html.contains(">x &lt; y</a>"));
+	}
+
+	#[test]
+	fn convert_deflated_writes_the_page_convert_writes_deflated() {
+		use std::io::Read as _;
+		let dir = std::env::temp_dir().join(format!("shipfitter-deflated-{}", std::process::id()));
+		fs::create_dir_all(&dir).unwrap();
+		fs::write(dir.join("readme.md"), "# Manual\n\n## Reading\n\nOpen a book.\n").unwrap();
+		convert(&dir.join("readme.md"), &dir.join("readme.html"), &Page::default()).unwrap();
+		convert_deflated(&dir.join("readme.md"), &dir.join("readme.html.deflate"), &Page::default()).unwrap();
+		let plain = fs::read_to_string(dir.join("readme.html")).unwrap();
+		let mut inflated = String::new();
+		flate2::read::DeflateDecoder::new(fs::File::open(dir.join("readme.html.deflate")).unwrap())
+			.read_to_string(&mut inflated)
+			.unwrap();
+		fs::remove_dir_all(&dir).unwrap();
+		assert_eq!(inflated, plain);
 	}
 
 	#[test]

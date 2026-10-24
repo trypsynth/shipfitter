@@ -12,7 +12,7 @@ edition = "2024"
 [features]
 default = []
 # Markdown documentation as standalone HTML pages, for a build script or an xtask.
-docs = ["dep:finl_unicode", "dep:pulldown-cmark"]
+docs = ["dep:finl_unicode", "dep:flate2", "dep:pulldown-cmark"]
 # Release builds, zip and tar.gz archives, AppImages and Inno Setup installers, for an xtask.
 # Downloads the tools they need that aren't installed.
 package = ["dep:flate2", "dep:minisign", "dep:serde_json", "dep:sha2", "dep:tar", "dep:ureq", "dep:walkdir", "dep:zip"]

@@ -43,6 +43,8 @@ for readme in readmes("doc".as_ref()).unwrap() {
 }
 ```
 
+To embed the pages in the binary for a Help menu instead, write them with `convert_deflated` into `OUT_DIR`, `include_bytes!` them, and inflate the one you show with `flate2::read::DeflateDecoder` or `miniz_oxide::inflate::decompress_to_vec`. They take about a quarter of the space.
+
 In an xtask, enable the `package` feature:
 
 ```rust
